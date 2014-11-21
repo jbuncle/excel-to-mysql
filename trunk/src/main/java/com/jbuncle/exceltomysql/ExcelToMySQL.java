@@ -27,6 +27,8 @@ import java.sql.SQLException;
 import java.text.SimpleDateFormat;
 import java.util.Map.Entry;
 import java.util.*;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import org.apache.poi.ss.usermodel.*;
 
 /**
@@ -36,13 +38,20 @@ import org.apache.poi.ss.usermodel.*;
 public class ExcelToMySQL {
 
     private final SheetFilter filter;
+    private boolean strict;
 
     public ExcelToMySQL() {
         filter = new SheetPathFilter();
+        strict = true;
     }
 
     public ExcelToMySQL(String... allowedPaths) {
         filter = new SheetPathFilter(allowedPaths);
+        strict = true;
+    }
+
+    public void setStrict(boolean strict) {
+        this.strict = strict;
     }
 
     public void addWorkbook(Connection conn, Workbook workbook) throws SQLException {
@@ -86,7 +95,7 @@ public class ExcelToMySQL {
         }
     }
 
-    private static String createInsert(final String tableName, final List<Entry<String, ExcelType>> types, final Row row) {
+    private String createInsert(final String tableName, final List<Entry<String, ExcelType>> types, final Row row) {
         //Iterate
         final StringBuilder columns = new StringBuilder();
         final StringBuilder values = new StringBuilder();
@@ -103,24 +112,38 @@ public class ExcelToMySQL {
                     values.append("null").append(",");
                 } else {
                     cell = evaluator.evaluateInCell(cell);
+                    try {
+                        final String value;
+                        switch (sourceType.getValue()) {
+                            case DATE:
+                                value = new SimpleDateFormat("yyyy-MM-dd HH:mm").format(getCellValue(cell));
+                                values.append("'").append(value).append("'").append(",");
+                                break;
+                            case NUMERIC:
+                                values.append(getCellValue(cell)).append(",");
+                                break;
+                            case BOOLEAN:
+                                values.append(cell.getBooleanCellValue()).append(",");
+                                break;
+                            case STRING:
+                                value = getCellValue(cell).toString();
+                                values.append("'").append(value.replaceAll("'", "\\\\'")).append("'").append(",");
+                                break;
+                            default:
+                                values.append("null").append(",");
+                                nullCount++;
+                                break;
+                        }
+                    } catch (Exception ex) {
+                        if (strict) {
+                            throw new RuntimeException("Failed to process cell value: " + cell.toString() + ", of column:row " + columnCount + ":" + row.getRowNum()
+                                    + ", expecting type: " + sourceType.getValue().toString(), ex);
 
-                    switch (sourceType.getValue()) {
-                        case DATE:
-                            values.append("'").append(new SimpleDateFormat("yyyy-MM-dd HH:mm").format(cell.getDateCellValue())).append("'").append(",");
-                            break;
-                        case NUMERIC:
-                            values.append(cell.getNumericCellValue()).append(",");
-                            break;
-                        case BOOLEAN:
-                            values.append(cell.getBooleanCellValue()).append(",");
-                            break;
-                        case STRING:
-                            values.append("'").append(cell.getStringCellValue().replaceAll("'", "\\\\'")).append("'").append(",");
-                            break;
-                        default:
-                            values.append("null").append(",");
-                            nullCount++;
-                            break;
+                        } else {
+                            values.append("NULL").append(",");
+                            Logger.getLogger(ExcelToMySQL.class.getName()).log(Level.SEVERE, null, ex);
+                        }
+
                     }
                 }
 
@@ -136,11 +159,28 @@ public class ExcelToMySQL {
         return "INSERT INTO `" + tableName + "` (" + columns + ") VALUES (" + values + ");";
     }
 
+    private static Object getCellValue(Cell cell) {
+        switch (cell.getCellType()) {
+            case Cell.CELL_TYPE_BOOLEAN:
+                return String.valueOf(cell.getBooleanCellValue());
+            case Cell.CELL_TYPE_NUMERIC:
+                if (DateUtil.isCellDateFormatted(cell)) {
+                    return cell.getDateCellValue();
+                } else {
+                    return String.valueOf(cell.getNumericCellValue());
+                }
+            case Cell.CELL_TYPE_STRING:
+            default:
+                return cell.getStringCellValue();
+        }
+    }
+
     private static boolean isSet(Entry<String, ExcelType> entry) {
         return entry != null && entry.getKey() != null && entry.getValue() != null;
     }
 
     private void addColumnName(List<Entry<String, ExcelType>> columns, int cellCount, String columnName, Sheet sheet) {
+        columnName = columnName.replaceAll("\n", " ");
         if (filter.accept(sheet, columnName)) {
             //Doesn't exist yet
             if (!Utils.typesContain(columns, columnName)) {

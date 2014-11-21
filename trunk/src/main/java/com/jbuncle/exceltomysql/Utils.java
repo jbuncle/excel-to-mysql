@@ -60,8 +60,7 @@ public class Utils {
 
     public static ExcelType excelTypeToMySql(Cell cell) {
         final FormulaEvaluator evaluator = cell.getRow().getSheet().getWorkbook().getCreationHelper().createFormulaEvaluator();
-        final CellValue cellValue = evaluator.evaluate(cell);
-        switch (cellValue.getCellType()) {
+        switch (cell.getCellType()) {
             case Cell.CELL_TYPE_BLANK:
             case Cell.CELL_TYPE_STRING:
                 return ExcelType.STRING;
