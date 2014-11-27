@@ -86,8 +86,8 @@ public class ExcelToMySQL {
         for (final Row row : new IteratorWrapper<Row>(sheet.iterator())) {
             if (rowCount > 0) {
                 final String insert = createInsert(tableName, types, row);
-                System.out.println(insert);
                 if (insert != null) {
+                    System.out.println(insert);
                     conn.createStatement().execute(insert);
                 }
             }
@@ -97,65 +97,73 @@ public class ExcelToMySQL {
 
     private String createInsert(final String tableName, final List<Entry<String, ExcelType>> types, final Row row) {
         //Iterate
-        final StringBuilder columns = new StringBuilder();
-        final StringBuilder values = new StringBuilder();
         final FormulaEvaluator evaluator = row.getSheet().getWorkbook().getCreationHelper().createFormulaEvaluator();
+        final Map<String, String> colVals = new HashMap<String, String>();
 
-        int nullCount = 0;
         int columnCount = 0;
         for (Entry<String, ExcelType> sourceType : types) {
             if (isSet(sourceType)) {
-                columns.append("`").append(sourceType.getKey()).append("`").append(",");
                 Cell cell = row.getCell(columnCount);
-
-                if (cell == null) {
-                    values.append("null").append(",");
-                } else {
+                if (cell != null) {
                     cell = evaluator.evaluateInCell(cell);
                     try {
                         final String value;
                         switch (sourceType.getValue()) {
                             case DATE:
-                                value = new SimpleDateFormat("yyyy-MM-dd HH:mm").format(getCellValue(cell));
-                                values.append("'").append(value).append("'").append(",");
+                                value = "'" + new SimpleDateFormat("yyyy-MM-dd HH:mm").format(getCellValue(cell)) + "'";
+                                colVals.put(sourceType.getKey(), value);
                                 break;
                             case NUMERIC:
-                                values.append(getCellValue(cell)).append(",");
+                                value = String.valueOf(getCellValue(cell));
+                                colVals.put(sourceType.getKey(), value);
                                 break;
                             case BOOLEAN:
-                                values.append(cell.getBooleanCellValue()).append(",");
+                                value = String.valueOf(cell.getBooleanCellValue());
+                                colVals.put(sourceType.getKey(), value);
                                 break;
                             case STRING:
-                                value = getCellValue(cell).toString();
-                                values.append("'").append(value.replaceAll("'", "\\\\'")).append("'").append(",");
-                                break;
-                            default:
-                                values.append("null").append(",");
-                                nullCount++;
+                                value = String.valueOf(getCellValue(cell)).replaceAll("'", "\\\\'");
+                                if (!value.isEmpty()) {
+                                    colVals.put(sourceType.getKey(), "'" + value + "'");
+                                }
                                 break;
                         }
                     } catch (Exception ex) {
                         if (strict) {
-                            throw new RuntimeException("Failed to process cell value: " + cell.toString() + ", of column:row " + columnCount + ":" + row.getRowNum()
+                            throw new RuntimeException("Failed to process cell value: " + getCellValue(cell) + ", of column:row " + columnCount + ":" + row.getRowNum()
                                     + ", expecting type: " + sourceType.getValue().toString(), ex);
-
-                        } else {
-                            values.append("NULL").append(",");
-                            Logger.getLogger(ExcelToMySQL.class.getName()).log(Level.SEVERE, null, ex);
                         }
-
                     }
                 }
-
             }
             columnCount++;
+        }
+        return createInsertStatement(colVals, tableName);
+    }
+
+    private String createInsertStatement(final Map<String, String> colVals, final String tableName) throws RuntimeException {
+        final StringBuilder columns = new StringBuilder();
+        final StringBuilder values = new StringBuilder();
+        if (colVals.isEmpty()) {
+            return null;
+        }
+        for (Entry<String, String> colVal : colVals.entrySet()) {
+            columns.append("`").append(colVal.getKey()).append("`").append(",");
+            try {
+                values.append(colVal.getValue()).append(",");
+            } catch (Exception ex) {
+                if (strict) {
+                    throw new RuntimeException("Failed to process cell value: " + colVal.getValue() + ", of column:row " + colVal.getKey()
+                            + ", expecting type: " + colVal.getValue(), ex);
+                } else {
+                    values.append("NULL").append(",");
+                    Logger.getLogger(ExcelToMySQL.class.getName()).log(Level.SEVERE, "Failed to process cell value: " + colVal.getValue() + ", of column:row " + colVal.getKey() + ":" + ", expecting type: " + colVal.getValue(), ex);
+                }
+            }
         }
         columns.deleteCharAt(columns.length() - 1);
         values.deleteCharAt(values.length() - 1);
 
-        if (nullCount >= columnCount) {
-            return null;
-        }
         return "INSERT INTO `" + tableName + "` (" + columns + ") VALUES (" + values + ");";
     }
 
@@ -171,7 +179,7 @@ public class ExcelToMySQL {
                 }
             case Cell.CELL_TYPE_STRING:
             default:
-                return cell.getStringCellValue();
+                return cell.getStringCellValue().trim();
         }
     }
 
