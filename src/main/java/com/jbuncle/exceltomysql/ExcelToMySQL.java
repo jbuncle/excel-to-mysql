@@ -169,15 +169,15 @@ public class ExcelToMySQL {
 
     private static Object getCellValue(Cell cell) {
         switch (cell.getCellType()) {
-            case Cell.CELL_TYPE_BOOLEAN:
+            case BOOLEAN:
                 return String.valueOf(cell.getBooleanCellValue());
-            case Cell.CELL_TYPE_NUMERIC:
+            case NUMERIC:
                 if (DateUtil.isCellDateFormatted(cell)) {
                     return cell.getDateCellValue();
                 } else {
                     return String.valueOf(cell.getNumericCellValue());
                 }
-            case Cell.CELL_TYPE_STRING:
+            case STRING:
             default:
                 return cell.getStringCellValue().trim();
         }
