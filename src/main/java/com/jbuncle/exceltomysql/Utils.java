@@ -60,12 +60,12 @@ public class Utils {
     public static ExcelType excelTypeToMySql(Cell cell) {
         final FormulaEvaluator evaluator = cell.getRow().getSheet().getWorkbook().getCreationHelper().createFormulaEvaluator();
         switch (cell.getCellType()) {
-            case Cell.CELL_TYPE_BLANK:
-            case Cell.CELL_TYPE_STRING:
+            case BLANK:
+            case STRING:
                 return ExcelType.STRING;
-            case Cell.CELL_TYPE_BOOLEAN:
+            case BOOLEAN:
                 return ExcelType.BOOLEAN;
-            case Cell.CELL_TYPE_NUMERIC:
+            case NUMERIC:
                 if (DateUtil.isCellDateFormatted(cell)) {
                     return ExcelType.DATE;
                 } else {
